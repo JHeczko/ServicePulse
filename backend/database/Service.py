@@ -19,6 +19,6 @@ class Service(Base):
     user_id: Mapped[int] = mapped_column( ForeignKey("users.id", ondelete="CASCADE", onupdate="CASCADE") ,nullable=False)
 
     # ==== RELATIONSHIPS ====
-    owner: Mapped["User"] = relationship(back_populates="services", cascade="all, delete-orphan")
+    owner: Mapped["User"] = relationship(back_populates="services")
     checks: Mapped[List["Check"]] = relationship(back_populates="service", cascade="all, delete-orphan")
     incidents: Mapped[List["Incident"]] = relationship("Incident", back_populates="service", cascade="all, delete-orphan")

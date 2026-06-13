@@ -14,4 +14,4 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(index=True)
 
     # ==== RELATIONSHIPS ====
-    services: Mapped[List["Service"]] = relationship(back_populates="owner")
+    services: Mapped[List["Service"]] = relationship(back_populates="owner", cascade="all, delete-orphan")

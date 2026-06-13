@@ -278,6 +278,11 @@ cd service-puls
 docker compose up --build
 ```
 
+### DB migration
+```bash
+PYTHONPATH=backend alembic -c backend/alembic.ini revision --autogenerate -m "migration-name"
+```
+
 ---
 
 ## Available Services

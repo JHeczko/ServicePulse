@@ -4,6 +4,6 @@ alembic
 psycopg[binary]
 psycopg2-binary
 uvicorn
-passlib[bcrypt]
+bcrypt
 pyjwt
 python-multipart
