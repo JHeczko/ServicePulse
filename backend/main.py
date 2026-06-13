@@ -5,6 +5,19 @@ from fastapi import FastAPI
 app = FastAPI()
 
 
+# =-=-=-=-=-= AUTH =-=-=-=-=-=
+
+@app.post("/auth/register")
+def register_user():
+    return {}
+
+@app.post("/auth/login")
+def login_user():
+    return {}
+
+# =-=-=-=-=-= SERVICES =-=-=-=-=-=
+
+# =-=-=-=-=-= HEALTH =-=-=-=-=-=
 @app.get("/health")
 def health_check():
     return {
