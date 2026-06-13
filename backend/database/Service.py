@@ -1,3 +1,5 @@
+from typing import List
+
 from sqlalchemy import Column, ForeignKey
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 
@@ -17,4 +19,6 @@ class Service(Base):
     user_id: Mapped[int] = mapped_column( ForeignKey("users.id", ondelete="CASCADE", onupdate="CASCADE") ,nullable=False)
 
     # ==== RELATIONSHIPS ====
-    owner: Mapped["User"] = relationship(back_populates="services")
+    owner: Mapped["User"] = relationship(back_populates="services", cascade="all, delete-orphan")
+    checks: Mapped[List["Check"]] = relationship(back_populates="service", cascade="all, delete-orphan")
+    incidents: Mapped[List["Incident"]] = relationship("Incident", back_populates="service", cascade="all, delete-orphan")

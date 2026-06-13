@@ -1,6 +1,6 @@
 from datetime import datetime
 from sqlalchemy import ForeignKey, DateTime, Index
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database.core import Base
 
@@ -13,6 +13,9 @@ class Check(Base):
     status_code: Mapped[int] = mapped_column(nullable=False)
     response_time_ms: Mapped[int] = mapped_column(nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, nullable=False)
+
+    # ==== RELATIONSHIPS ====
+    service: Mapped['Service'] = relationship(argument="Service", back_populates="checks")
 
     # ==== FK ====
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)

@@ -1,3 +1,6 @@
+from datetime import datetime
+from typing import Optional
+
 from pydantic import BaseModel, EmailStr, Field, HttpUrl
 
 
@@ -23,7 +26,6 @@ class TokenData(BaseModel):
 
 
 # ===== SERVICE SCHEMAS =====
-
 class ServiceBase(BaseModel):
     name: str
     url: HttpUrl  # Pydantic sam sprawdzi, czy to poprawny link HTTP/HTTPS
@@ -42,6 +44,30 @@ class ServiceUpdate(BaseModel):
 class ServiceResponse(ServiceBase):
     id: int
     user_id: int
+
+    class Config:
+        from_attributes = True
+
+# ===== CHECKS SCHEMAS =====
+class CheckResponse(BaseModel):
+    id: int
+    status_code: int
+    response_time_ms: int
+    created_at: datetime
+    user_id: int
+    service_id: int
+
+    class Config:
+        from_attributes = True
+
+# ===== INCIDENTS SCHEMAS =====
+class IncidentResponse(BaseModel):
+    id: int
+    started_at: datetime
+    ended_at: Optional[datetime]
+    error_message: str
+    user_id: int
+    service_id: int
 
     class Config:
         from_attributes = True
