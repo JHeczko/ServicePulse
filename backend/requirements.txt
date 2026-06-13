@@ -2,4 +2,7 @@ fastapi
 sqlalchemy
 alembic
 psycopg[binary]
+psycopg2-binary
 uvicorn
+passlib[bcrypt]
+pyjwt

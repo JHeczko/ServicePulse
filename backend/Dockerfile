@@ -1,6 +1,6 @@
 FROM python:3.14.6-alpine
 
-WORKDIR /app
+WORKDIR /backend
 
 RUN apk add bash
 

@@ -1,7 +1,7 @@
-from backend.database.Check import Check
-from backend.database.Incident import Incident
-from backend.database.User import User
-from backend.database.Service import Service
-from backend.database.core import Base
+from .Check import Check
+from .Incident import Incident
+from .User import User
+from .Service import Service
+from .core.int_db import Base
 
 __all__ = ["Base", "User", "Service", "Check", "Incident"]

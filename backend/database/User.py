@@ -2,8 +2,8 @@ from typing import List
 
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 
-from backend.database.Service import Service
-from backend.database.core import Base
+from database.Service import Service
+from database.core import Base
 
 
 class User(Base):

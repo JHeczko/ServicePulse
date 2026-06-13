@@ -1,8 +1,8 @@
 from sqlalchemy import Column, ForeignKey
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 
-from backend.database import User
-from backend.database.core import Base
+from database import User
+from database.core import Base
 
 class Service(Base):
     __tablename__ = 'services'

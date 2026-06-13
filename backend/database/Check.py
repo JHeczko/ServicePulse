@@ -1,7 +1,8 @@
 from datetime import datetime
 from sqlalchemy import ForeignKey, DateTime, Index
 from sqlalchemy.orm import Mapped, mapped_column
-from backend.database.core import Base
+
+from database.core import Base
 
 
 class Check(Base):

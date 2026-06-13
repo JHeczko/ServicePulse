@@ -3,7 +3,7 @@ from typing import Optional
 from sqlalchemy import ForeignKey, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.database.core import Base
+from database.core import Base
 
 
 class Incident(Base):
