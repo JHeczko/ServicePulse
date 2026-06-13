@@ -1,7 +1,7 @@
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes.auth import router as auth_router
+from routes import auth_router, service_router
 
 app = FastAPI(
     title="ServicePulse API",
@@ -20,6 +20,7 @@ app.add_middleware(
 
 # =-=-=-=-=-= SERVICES =-=-=-=-=-=
 app.include_router(auth_router)
+app.include_router(service_router)
 
 @app.get("/")
 def root():

@@ -1,7 +1,6 @@
 from sqlalchemy import Column, ForeignKey
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 
-from database import User
 from database.core import Base
 
 class Service(Base):
@@ -18,4 +17,4 @@ class Service(Base):
     user_id: Mapped[int] = mapped_column( ForeignKey("users.id", ondelete="CASCADE", onupdate="CASCADE") ,nullable=False)
 
     # ==== RELATIONSHIPS ====
-    owner: Mapped[User] = relationship(back_populates="services")
+    owner: Mapped["User"] = relationship(back_populates="services")
