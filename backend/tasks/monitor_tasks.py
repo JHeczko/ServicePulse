@@ -121,10 +121,20 @@ def ping_service_task(service_id: int):
 
 @dramatiq.actor
 def register_worker_heartbeat():
+    logger.info("Worker received heartbeat task from scheduler. Processing...")
     try:
         redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
         client = redis.from_url(redis_url, socket_timeout=2.0)
 
-        client.set("worker:heartbeat", time.time())
-    except Exception:
-        pass
+        current_time = time.time()
+        client.set("worker:heartbeat", current_time)
+
+        logger.info(
+            "Worker heartbeat updated successfully in Redis",
+            timestamp=current_time
+        )
+    except Exception as e:
+        logger.error(
+            "Worker failed to save heartbeat to Redis",
+            error=str(e)
+        )

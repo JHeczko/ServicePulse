@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from database.core import SessionLocal
 from database.Service import Service
@@ -78,6 +80,7 @@ def init_scheduler():
         trigger="interval",
         minutes=1,
         id="worker_heartbeat_generator",
+        next_run_time=datetime.now(),
         replace_existing=True
     )
     logger.info("Worker heartbeat generator scheduled successfully (1m interval)")
