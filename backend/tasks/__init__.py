@@ -1,1 +1,1 @@
-from .monitor_tasks import ping_service_task
+from .monitor_tasks import ping_service_task, register_worker_heartbeat

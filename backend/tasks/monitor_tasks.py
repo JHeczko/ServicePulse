@@ -11,7 +11,8 @@ from database.Check import Check
 from database.Incident import Incident
 from utils.logger import logger
 
-# 1. Dramatiq broker configuration with Redis
+import redis
+
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 broker = RedisBroker(url=REDIS_URL)
 dramatiq.set_broker(broker)
@@ -116,3 +117,14 @@ def ping_service_task(service_id: int):
         )
     finally:
         db.close()
+
+
+@dramatiq.actor
+def register_worker_heartbeat():
+    try:
+        redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+        client = redis.from_url(redis_url, socket_timeout=2.0)
+
+        client.set("worker:heartbeat", time.time())
+    except Exception:
+        pass

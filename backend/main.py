@@ -1,19 +1,28 @@
+import time
 from contextlib import asynccontextmanager
 
 import uvicorn
+import redis
+import os
+
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import FastAPI
+from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+
 from routes import auth_router, service_router
 from sqlalchemy import text
 
-from database.core.int_db import SessionLocal
-from database.Service import Service
-from tasks import ping_service_task
+from database.core import SessionLocal
+from database import Service
+from tasks import ping_service_task, register_worker_heartbeat
 from utils.logger import logger
+
+
 
 scheduler = BackgroundScheduler()
 
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+redis_client = redis.from_url(REDIS_URL, socket_timeout=2.0)
 
 def push_to_queue(service_id: int):
     try:
@@ -30,6 +39,11 @@ def push_to_queue(service_id: int):
             error=str(e),
         )
 
+def trigger_worker_heartbeat():
+    try:
+        register_worker_heartbeat.send()
+    except Exception as e:
+        logger.error("Failed to send heartbeat task to Dramatiq broker", error=str(e))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -37,6 +51,7 @@ async def lifespan(app: FastAPI):
     logger.info("APScheduler background runner started")
 
     db = SessionLocal()
+    # adding every saved service to the queue loaded from DB
     try:
         services = db.query(Service).all()
         for service in services:
@@ -53,13 +68,26 @@ async def lifespan(app: FastAPI):
             total_services=len(services),
             status="active",
         )
+
     except Exception as e:
-        logger.error(
+        logger.critical(
             "Critical error initializing services on startup",
             error=str(e),
         )
+        raise e
     finally:
         db.close()
+
+
+    # adding health check
+    scheduler.add_job(
+        trigger_worker_heartbeat,
+        trigger="interval",
+        minutes=1,
+        id="worker_heartbeat_generator",
+        replace_existing=True
+    )
+    logger.info("Worker heartbeat generator scheduled successfully (1m interval)")
 
     yield
 
@@ -96,26 +124,61 @@ def root():
 
 
 @app.get("/health")
-def health_check():
-    database_status = "ok"
-    db = SessionLocal()
+def health_check(response: Response):
+    components = {
+        "database": "unknown",
+        "redis": "unknown",
+        "worker": "unknown"
+    }
 
+    # 1. DATABASE CHECK
+    db = SessionLocal()
     try:
         db.execute(text("SELECT 1"))
+        components["database"] = "ok"
     except Exception as e:
-        database_status = "down"
-        logger.critical(
-            "Health check detected database failure", error=str(e)
-        )
+        components["database"] = "down"
+        logger.critical("Health check failure: Database unreachable", error=str(e))
     finally:
         db.close()
 
-    overall_status = "ok" if database_status == "ok" else "error"
+    # 2. REDIS CHECK
+    try:
+        if redis_client.ping():
+            components["redis"] = "ok"
+    except Exception as e:
+        components["redis"] = "down"
+        logger.critical("Health check failure: Redis unreachable", error=str(e))
+
+    # 3. DRAMATIQ WORKER CHECK
+    try:
+        last_heartbeat = redis_client.get("worker:heartbeat")
+        if last_heartbeat:
+            last_heartbeat_time = float(last_heartbeat)
+            if time.time() - last_heartbeat_time < 90:
+                components["worker"] = "ok"
+            else:
+                components["worker"] = "stale"
+                logger.warning("Health check warning: Worker heartbeat is stale")
+        else:
+            components["worker"] = "down"
+            logger.error("Health check failure: No worker heartbeat found in Redis")
+    except Exception as e:
+        components["worker"] = "down"
+        logger.critical("Health check failure: Could not read worker heartbeat", error=str(e))
+
+    all_ok = all(status_val == "ok" for status_val in components.values())
+
+    if all_ok:
+        overall_status = "ok"
+        response.status_code = status.HTTP_200_OK
+    else:
+        overall_status = "error"
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
 
     return {
         "status": overall_status,
-        "database": database_status,
-        "worker": "ok",
+        "components": components
     }
 
 
