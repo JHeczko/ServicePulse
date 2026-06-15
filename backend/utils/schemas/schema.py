@@ -1,8 +1,6 @@
 from datetime import datetime
 from typing import Optional
-
-from pydantic import BaseModel, EmailStr, Field, HttpUrl
-
+from pydantic import BaseModel, Field, HttpUrl
 
 # ===== AUTH SCHEMAS =====
 class UserCreate(BaseModel):
@@ -16,7 +14,6 @@ class UserCreateResponse(BaseModel):
     class Config:
         from_attributes = True
 
-
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -28,18 +25,16 @@ class TokenData(BaseModel):
 # ===== SERVICE SCHEMAS =====
 class ServiceBase(BaseModel):
     name: str
-    url: HttpUrl  # Pydantic sam sprawdzi, czy to poprawny link HTTP/HTTPS
-    check_interval: int = 60  # Domyślnie sprawdzamy co 60 sekund
-    is_active: bool = True
+    url: HttpUrl
+    interval: int = Field(60, description="Interval in seconds") # Zgodnie z kolumną w bazie
 
 class ServiceCreate(ServiceBase):
     pass
 
 class ServiceUpdate(BaseModel):
-    name: str | None = None
-    url: HttpUrl | None = None
-    check_interval: int | None = None
-    is_active: bool | None = None
+    name: Optional[str] = None
+    url: Optional[HttpUrl] = None
+    interval: Optional[int] = None
 
 class ServiceResponse(ServiceBase):
     id: int
@@ -47,6 +42,7 @@ class ServiceResponse(ServiceBase):
 
     class Config:
         from_attributes = True
+
 
 # ===== CHECKS SCHEMAS =====
 class CheckResponse(BaseModel):
@@ -59,6 +55,7 @@ class CheckResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
 
 # ===== INCIDENTS SCHEMAS =====
 class IncidentResponse(BaseModel):

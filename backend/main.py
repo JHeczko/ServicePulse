@@ -1,23 +1,39 @@
+import logging
+import sys
+
 import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
 from routes import auth_router, service_router
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 
 from database.core.int_db import SessionLocal
 from database.Service import Service
 from tasks import ping_service_task
 
-scheduler = AsyncIOScheduler()
+# WŁĄCZENIE LOGÓW - teraz zobaczysz każdy błąd APSchedulera w konsoli!
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+logger = logging.getLogger(__name__)
+
+scheduler = BackgroundScheduler()
 
 def push_to_queue(service_id: int):
-    ping_service_task.send(service_id)
+    try:
+        logger.info(f"[SCHEDULER] Popycham serwis ID {service_id} do kolejki Dramatiq...")
+        ping_service_task.send(service_id)
+    except Exception as e:
+        logger.error(f"[SCHEDULER] Nie udało się wysłać zadania do Dramatiq: {e}")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Startujemy scheduler w tle
     scheduler.start()
 
     db = SessionLocal()
@@ -32,14 +48,17 @@ async def lifespan(app: FastAPI):
                 args=[service.id],
                 replace_existing=True
             )
-        print(f"[INFO] Scheduler uruchomiony. Załadowano {len(services)} serwisów.")
+        logger.info(f"Scheduler uruchomiony produkcyjnie. Załadowano {len(services)} serwisów z bazy.")
+    except Exception as e:
+        logger.error(f"Błąd podczas ładowania serwisów na starcie: {e}")
     finally:
         db.close()
 
     yield
     # ==== ZAMKNIĘCIE APLIKACJI ====
     scheduler.shutdown()
-    print("[INFO] Scheduler wyłączony.")
+    logger.info("Scheduler wyłączony bezpiecznie.")
+
 app = FastAPI(
     title="ServicePulse API",
     description="Backend to monitor defined services",
@@ -56,7 +75,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# =-=-=-=-=-= SERVICES =-=-=-=-=-=
+# =-=-=-=-=-= ROUTERS =-=-=-=-=-=
 app.include_router(auth_router)
 app.include_router(service_router)
 
@@ -64,13 +83,9 @@ app.include_router(service_router)
 def root():
     return {"message": "ServicePulse API is running perfectly!"}
 
-
-# =-=-=-=-=-= HEALTH =-=-=-=-=-=
 @app.get("/health")
 def health_check():
-    return {
-        "status": "ok",
-    }
+    return {"status": "ok"}
 
 
 if __name__ == "__main__":

@@ -12,7 +12,6 @@ class Service(Base):
     id: Mapped[int] = mapped_column(primary_key=True, unique=True, index=True)
     name: Mapped[str] = mapped_column(nullable=False)
     url: Mapped[str] = mapped_column(nullable=False)
-    # interval in seconds
     interval: Mapped[int] = mapped_column(nullable=False)
 
     # ==== FK ====

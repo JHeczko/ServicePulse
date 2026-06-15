@@ -14,10 +14,33 @@ router = APIRouter(prefix="/services", tags=["Services"])
 # ===== SERVICE ENDPOINTS =====
 @router.post("/", response_model=ServiceResponse, status_code=status.HTTP_201_CREATED)
 def create_service(service_data: ServiceCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    new_service = Service(**service_data.model_dump(), user_id=current_user.id)
+    # 1. Tworzymy nowy obiekt modelu i jawnie przypisujemy wartości
+    new_service = Service()
+    new_service.name = service_data.name
+    new_service.url = str(service_data.url)      # Bezpieczna, jawna konwersja HttpUrl -> str
+    new_service.interval = service_data.interval
+    new_service.user_id = current_user.id
+
+    # 2. Zapis do bazy danych
     db.add(new_service)
     db.commit()
     db.refresh(new_service)
+
+    # 3. Rejestracja zadania w schedulerze
+    from main import scheduler, push_to_queue
+    try:
+        scheduler.add_job(
+            push_to_queue,
+            trigger="interval",
+            seconds=new_service.interval,
+            id=f"service_{new_service.id}",
+            args=[new_service.id],
+            replace_existing=True  # Dobra praktyka, zapobiega konfliktom ID w pamięci
+        )
+    except Exception as e:
+        # Log błędu schedulera, żeby w razie problemów z APSchedulerem nie blokować zapisu do bazy
+        print(f"Błąd podczas dodawania jobu do schedulera dla serwisu {new_service.id}: {e}")
+
     return new_service
 
 
@@ -28,7 +51,6 @@ def get_services(db: Session = Depends(get_db), current_user: User = Depends(get
 
 @router.get("/{service_id}", response_model=ServiceResponse)
 def get_service(service_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    from main import scheduler, push_to_queue
 
     service = (db.query(Service).
                filter(Service.id == service_id,Service.user_id == current_user.id).
@@ -37,19 +59,12 @@ def get_service(service_id: int, db: Session = Depends(get_db), current_user: Us
     if not service:
         raise HTTPException(status_code=404, detail="Serwis nie został znaleziony.")
 
-    scheduler.add_job(
-        push_to_queue,
-        trigger="interval",
-        seconds=service.interval,
-        id=f"service_{service.id}",
-        args=[service.id]
-    )
-
     return service
 
 
 @router.put("/{service_id}", response_model=ServiceResponse)
 def update_service(service_id: int, service_data: ServiceUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # 1. Szukamy serwisu w bazie
     service = db.query(Service).filter(
         Service.id == service_id,
         Service.user_id == current_user.id
@@ -58,14 +73,35 @@ def update_service(service_id: int, service_data: ServiceUpdate, db: Session = D
     if not service:
         raise HTTPException(status_code=404, detail="Serwis nie został znaleziony.")
 
-    update_data = service_data.model_dump(exclude_unset=True)
-    for key, value in update_data.items():
-        if key == "url":
-            value = str(value)
-        setattr(service, key, value)
+    # 2. Ręczne, jawne przypisywanie parametrów po kolei
+    if service_data.name is not None:
+        service.name = service_data.name
 
+    if service_data.url is not None:
+        print(f"[INFO] {str(service_data.url)}")
+        service.url = str(service_data.url)  # Od razu bezpiecznie rzutujemy obiekt HttpUrl na string
+
+    if service_data.interval is not None:
+        service.interval = service_data.interval
+
+    # 3. Zapis zmian w bazie
     db.commit()
     db.refresh(service)
+
+    # 4. Przeładowanie jobu w schedulerze z aktualnymi danymi serwisu
+    from main import scheduler, push_to_queue
+    try:
+        scheduler.add_job(
+            push_to_queue,
+            trigger="interval",
+            seconds=service.interval,  # Zawsze bierze aktualną wartość (nową lub starą)
+            id=f"service_{service.id}",
+            args=[service.id],
+            replace_existing=True      # Bezwarunkowo nadpisuje konfigurację zadania
+        )
+    except Exception as e:
+        print(f"Błąd podczas aktualizacji schedulera dla serwisu {service.id}: {e}")
+
     return service
 
 
