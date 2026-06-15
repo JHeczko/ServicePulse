@@ -8,25 +8,25 @@ from database.Service import Service
 from database.User import User
 from utils.schemas import ServiceCreate, ServiceResponse, ServiceUpdate, CheckResponse, IncidentResponse
 from utils.security import get_current_user
+from utils.logger import logger
 
 router = APIRouter(prefix="/services", tags=["Services"])
 
+
 # ===== SERVICE ENDPOINTS =====
 @router.post("/", response_model=ServiceResponse, status_code=status.HTTP_201_CREATED)
-def create_service(service_data: ServiceCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # 1. Tworzymy nowy obiekt modelu i jawnie przypisujemy wartości
+def create_service(service_data: ServiceCreate, db: Session = Depends(get_db),
+                   current_user: User = Depends(get_current_user)):
     new_service = Service()
     new_service.name = service_data.name
-    new_service.url = str(service_data.url)      # Bezpieczna, jawna konwersja HttpUrl -> str
+    new_service.url = str(service_data.url)
     new_service.interval = service_data.interval
     new_service.user_id = current_user.id
 
-    # 2. Zapis do bazy danych
     db.add(new_service)
     db.commit()
     db.refresh(new_service)
 
-    # 3. Rejestracja zadania w schedulerze
     from main import scheduler, push_to_queue
     try:
         scheduler.add_job(
@@ -35,72 +35,100 @@ def create_service(service_data: ServiceCreate, db: Session = Depends(get_db), c
             seconds=new_service.interval,
             id=f"service_{new_service.id}",
             args=[new_service.id],
-            replace_existing=True  # Dobra praktyka, zapobiega konfliktom ID w pamięci
+            replace_existing=True
         )
+
     except Exception as e:
-        # Log błędu schedulera, żeby w razie problemów z APSchedulerem nie blokować zapisu do bazy
-        print(f"Błąd podczas dodawania jobu do schedulera dla serwisu {new_service.id}: {e}")
+        logger.error(
+            "Failed to add job to scheduler for service",
+            service_id=new_service.id,
+            error=str(e)
+        )
+
+    logger.info(
+        "Service created successfully and scheduled",
+        service_id=new_service.id,
+        user_id=current_user.id,
+        interval=new_service.interval
+    )
 
     return new_service
 
 
 @router.get("/", response_model=List[ServiceResponse])
 def get_services(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return db.query(Service).filter(Service.user_id == current_user.id).all()
+    services = db.query(Service).filter(Service.user_id == current_user.id).all()
+
+    # logger.info(
+    #     "Fetched user services",
+    #     user_id=current_user.id,
+    #     count=len(services)
+    # )
+    return services
 
 
 @router.get("/{service_id}", response_model=ServiceResponse)
 def get_service(service_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-
     service = (db.query(Service).
-               filter(Service.id == service_id,Service.user_id == current_user.id).
+               filter(Service.id == service_id, Service.user_id == current_user.id).
                first())
 
     if not service:
-        raise HTTPException(status_code=404, detail="Serwis nie został znaleziony.")
+        raise HTTPException(status_code=404, detail="Service not found")
 
+    # logger.info(
+    #     "Fetched specific service details",
+    #     service_id=service_id,
+    #     user_id=current_user.id
+    # )
     return service
 
 
 @router.put("/{service_id}", response_model=ServiceResponse)
-def update_service(service_id: int, service_data: ServiceUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # 1. Szukamy serwisu w bazie
+def update_service(service_id: int, service_data: ServiceUpdate, db: Session = Depends(get_db),
+                   current_user: User = Depends(get_current_user)):
     service = db.query(Service).filter(
         Service.id == service_id,
         Service.user_id == current_user.id
     ).first()
 
     if not service:
-        raise HTTPException(status_code=404, detail="Serwis nie został znaleziony.")
+        raise HTTPException(status_code=404, detail="Service not found")
 
-    # 2. Ręczne, jawne przypisywanie parametrów po kolei
     if service_data.name is not None:
         service.name = service_data.name
 
     if service_data.url is not None:
-        print(f"[INFO] {str(service_data.url)}")
-        service.url = str(service_data.url)  # Od razu bezpiecznie rzutujemy obiekt HttpUrl na string
+        service.url = str(service_data.url)
 
     if service_data.interval is not None:
         service.interval = service_data.interval
 
-    # 3. Zapis zmian w bazie
     db.commit()
     db.refresh(service)
 
-    # 4. Przeładowanie jobu w schedulerze z aktualnymi danymi serwisu
     from main import scheduler, push_to_queue
     try:
         scheduler.add_job(
             push_to_queue,
             trigger="interval",
-            seconds=service.interval,  # Zawsze bierze aktualną wartość (nową lub starą)
+            seconds=service.interval,
             id=f"service_{service.id}",
             args=[service.id],
-            replace_existing=True      # Bezwarunkowo nadpisuje konfigurację zadania
+            replace_existing=True
         )
     except Exception as e:
-        print(f"Błąd podczas aktualizacji schedulera dla serwisu {service.id}: {e}")
+        logger.error(
+            "Failed to update scheduler job for service",
+            service_id=service.id,
+            error=str(e)
+        )
+
+    logger.info(
+        "Service updated successfully and scheduler reloaded",
+        service_id=service.id,
+        user_id=current_user.id
+    )
 
     return service
 
@@ -115,41 +143,75 @@ def delete_service(service_id: int, db: Session = Depends(get_db), current_user:
     ).first()
 
     if not service:
-        raise HTTPException(status_code=404, detail="Serwis nie został znaleziony.")
+        raise HTTPException(status_code=404, detail="Service not found")
 
     db.delete(service)
     db.commit()
 
     try:
         scheduler.remove_job(f"service_{service_id}")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(
+            "Could not remove job from scheduler or job did not exist",
+            service_id=service_id,
+            error=str(e)
+        )
+
+    logger.info(
+        "Service deleted successfully and removed from scheduler",
+        service_id=service_id,
+        user_id=current_user.id
+    )
 
     return None
 
+
 # ===== CHECKS ENDPOINTS =====
 @router.get("/{service_id}/checks", response_model=List[CheckResponse])
-def get_service_checks(service_id: int, limit: int = 50, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
-    # Zapytanie uderza prosto w Twój świetny kompozytowy indeks!
+def get_service_checks(service_id: int, limit: int = 50, db: Session = Depends(get_db),
+                       current_user=Depends(get_current_user)):
     checks = db.query(Check).filter(
         Check.service_id == service_id,
-        Check.user_id == current_user.id  # Błyskawiczna weryfikacja uprawnień
+        Check.user_id == current_user.id
     ).order_by(Check.created_at.desc()).limit(limit).all()
 
+    # logger.info(
+    #     "Fetched history checks for service",
+    #     service_id=service_id,
+    #     user_id=current_user.id,
+    #     limit=limit,
+    #     count=len(checks)
+    # )
     return checks
 
 
 # ===== INCIDENTS ENDPOINTS =====
 @router.get("/{service_id}/incidents", response_model=List[IncidentResponse])
-def get_service_incidents(    service_id: int, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
-    return db.query(Incident).filter(
+def get_service_incidents(service_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    incidents = db.query(Incident).filter(
         Incident.service_id == service_id,
         Incident.user_id == current_user.id
     ).order_by(Incident.started_at.desc()).all()
 
+    # logger.info(
+    #     "Fetched all incidents for service",
+    #     service_id=service_id,
+    #     user_id=current_user.id,
+    #     count=len(incidents)
+    # )
+    return incidents
+
+
 @router.get("/incidents/active", response_model=List[IncidentResponse])
-def get_active_incidents(db: Session = Depends(get_db), current_user = Depends(get_current_user)):
-    return db.query(Incident).filter(
+def get_active_incidents(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    active_incidents = db.query(Incident).filter(
         Incident.user_id == current_user.id,
         Incident.ended_at.is_(None)
     ).order_by(Incident.started_at.desc()).all()
+
+    # logger.info(
+    #     "Fetched active incidents",
+    #     user_id=current_user.id,
+    #     count=len(active_incidents)
+    # )
+    return active_incidents

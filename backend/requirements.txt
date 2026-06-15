@@ -10,3 +10,5 @@ python-multipart
 dramatiq[redis]
 apscheduler
 httpx
+structlog
+colorama

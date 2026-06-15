@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from database.core import get_db
 from database import User
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "no_key_avaible")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "no_key_available")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
@@ -38,7 +38,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Nie udało się zweryfikować danych uwierzytelniających",
+        detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
 

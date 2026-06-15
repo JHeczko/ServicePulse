@@ -1,6 +1,5 @@
 import os
 import time
-import json
 from datetime import datetime
 import httpx
 import dramatiq
@@ -10,21 +9,12 @@ from database.core.int_db import SessionLocal
 from database.Service import Service
 from database.Check import Check
 from database.Incident import Incident
+from utils.logger import logger
 
-# 1. Konfiguracja brokera Dramatiq z Redisem
+# 1. Dramatiq broker configuration with Redis
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 broker = RedisBroker(url=REDIS_URL)
 dramatiq.set_broker(broker)
-
-
-def log_json_event(event: str, service_id: int, status_code: int, response_time_ms: int):
-    log_payload = {
-        "event": event,
-        "service_id": service_id,
-        "status_code": status_code,
-        "response_time_ms": response_time_ms
-    }
-    print(json.dumps(log_payload))
 
 
 @dramatiq.actor
@@ -33,6 +23,10 @@ def ping_service_task(service_id: int):
     try:
         service = db.query(Service).filter(Service.id == service_id).first()
         if not service:
+            logger.warning(
+                "Service not found in database for checking",
+                service_id=service_id
+            )
             return
 
         start_time = time.time()
@@ -49,12 +43,18 @@ def ping_service_task(service_id: int):
                 if status_code < 400:
                     is_available = True
 
-            except (httpx.RequestError, httpx.TimeoutException):
+            except (httpx.RequestError, httpx.TimeoutException) as network_exc:
                 response_time_ms = int((time.time() - start_time) * 1000)
-                status_code = 0  # 0 symbolizuje błąd sieciowy w bazie
+                status_code = 0  # 0 symbolizes a network failure/timeout in the DB
                 is_available = False
+                logger.warning(
+                    "Network request failed during service ping",
+                    service_id=service.id,
+                    url=service.url,
+                    error=str(network_exc)
+                )
 
-        # ==== R4.0 & R5.0: ZAPIS WYNIKU SPRAWDZENIA (Check) ====
+        # ==== SAVE CHECK RESULT ====
         new_check = Check(
             status_code=status_code,
             response_time_ms=response_time_ms,
@@ -63,7 +63,7 @@ def ping_service_task(service_id: int):
         )
         db.add(new_check)
 
-        # ==== R4.0: AUTOMATYCZNA DETEKCJA INCYDENTÓW ====
+        # ==== AUTOMATIC INCIDENT DETECTION ====
         active_incident = db.query(Incident).filter(
             Incident.service_id == service.id,
             Incident.ended_at.is_(None)
@@ -71,7 +71,7 @@ def ping_service_task(service_id: int):
 
         if not is_available:
             if not active_incident:
-                error_msg = f"Serwis zwrócił status {status_code}" if status_code > 0 else "Błąd połączenia / Timeout"
+                error_msg = f"Service returned status code {status_code}" if status_code > 0 else "Connection error / Timeout"
                 new_incident = Incident(
                     error_message=error_msg,
                     user_id=service.user_id,
@@ -79,17 +79,40 @@ def ping_service_task(service_id: int):
                     started_at=datetime.now()
                 )
                 db.add(new_incident)
+
+                logger.error(
+                    "New incident detected! Service is down",
+                    service_id=service.id,
+                    status_code=status_code,
+                    error_message=error_msg
+                )
         else:
             if active_incident:
                 active_incident.ended_at = datetime.now()
 
+                logger.info(
+                    "Incident resolved. Service is back online",
+                    service_id=service.id,
+                    incident_id=active_incident.id,
+                    downtime_duration_ms=int((datetime.now() - active_incident.started_at).total_seconds() * 1000)
+                )
+
         db.commit()
 
-        log_json_event("service_checked", service.id, status_code, response_time_ms)
+        logger.info(
+            "Service check executed successfully",
+            service_id=service.id,
+            status_code=status_code,
+            response_time_ms=response_time_ms,
+            is_available=is_available
+        )
 
     except Exception as e:
         db.rollback()
-        # Logowanie błędów wewnętrznych workera, jeśli np. baza nawali
-        print(json.dumps({"event": "worker_error", "message": str(e), "service_id": service_id}))
+        logger.critical(
+            "Worker internal error processing service task",
+            service_id=service_id,
+            error=str(e)
+        )
     finally:
         db.close()

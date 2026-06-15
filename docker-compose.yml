@@ -65,6 +65,8 @@ services:
       - "13000:13000"
     depends_on:
       - postgres-db
+      - redis-worker
+      - monitoring_worker
     restart: always
     deploy:
       resources:

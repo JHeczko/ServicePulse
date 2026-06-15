@@ -1,40 +1,40 @@
-import logging
-import sys
+from contextlib import asynccontextmanager
 
 import uvicorn
+from apscheduler.schedulers.background import BackgroundScheduler
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes import auth_router, service_router
-
-from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from apscheduler.schedulers.background import BackgroundScheduler
+from sqlalchemy import text
 
 from database.core.int_db import SessionLocal
 from database.Service import Service
 from tasks import ping_service_task
-
-# WŁĄCZENIE LOGÓW - teraz zobaczysz każdy błąd APSchedulera w konsoli!
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
-logger = logging.getLogger(__name__)
+from utils.logger import logger
 
 scheduler = BackgroundScheduler()
 
+
 def push_to_queue(service_id: int):
     try:
-        logger.info(f"[SCHEDULER] Popycham serwis ID {service_id} do kolejki Dramatiq...")
+        logger.info(
+            "Pushing service to Dramatiq queue",
+            service_id=service_id,
+            action="scheduler_push",
+        )
         ping_service_task.send(service_id)
     except Exception as e:
-        logger.error(f"[SCHEDULER] Nie udało się wysłać zadania do Dramatiq: {e}")
+        logger.error(
+            "Failed to send task to Dramatiq",
+            service_id=service_id,
+            error=str(e),
+        )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startujemy scheduler w tle
     scheduler.start()
+    logger.info("APScheduler background runner started")
 
     db = SessionLocal()
     try:
@@ -46,18 +46,27 @@ async def lifespan(app: FastAPI):
                 seconds=service.interval,
                 id=f"service_{service.id}",
                 args=[service.id],
-                replace_existing=True
+                replace_existing=True,
             )
-        logger.info(f"Scheduler uruchomiony produkcyjnie. Załadowano {len(services)} serwisów z bazy.")
+        logger.info(
+            "All scheduler jobs loaded successfully",
+            total_services=len(services),
+            status="active",
+        )
     except Exception as e:
-        logger.error(f"Błąd podczas ładowania serwisów na starcie: {e}")
+        logger.error(
+            "Critical error initializing services on startup",
+            error=str(e),
+        )
     finally:
         db.close()
 
     yield
-    # ==== ZAMKNIĘCIE APLIKACJI ====
+
+    # ==== APP CLOSE ====
     scheduler.shutdown()
-    logger.info("Scheduler wyłączony bezpiecznie.")
+    logger.info("Scheduler shut down safely")
+
 
 app = FastAPI(
     title="ServicePulse API",
@@ -79,13 +88,35 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(service_router)
 
+
+# =-=-=-=-=-= BASIC ENDPOINTS =-=-=-=-=-=
 @app.get("/")
 def root():
     return {"message": "ServicePulse API is running perfectly!"}
 
+
 @app.get("/health")
 def health_check():
-    return {"status": "ok"}
+    database_status = "ok"
+    db = SessionLocal()
+
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception as e:
+        database_status = "down"
+        logger.critical(
+            "Health check detected database failure", error=str(e)
+        )
+    finally:
+        db.close()
+
+    overall_status = "ok" if database_status == "ok" else "error"
+
+    return {
+        "status": overall_status,
+        "database": database_status,
+        "worker": "ok",
+    }
 
 
 if __name__ == "__main__":
