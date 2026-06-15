@@ -2,6 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 
+from main import scheduler, push_to_queue
+
+
 from database import Check, Incident
 from database.core import get_db
 from database.Service import Service
@@ -28,13 +31,21 @@ def get_services(db: Session = Depends(get_db), current_user: User = Depends(get
 
 @router.get("/{service_id}", response_model=ServiceResponse)
 def get_service(service_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    service = db.query(Service).filter(
-        Service.id == service_id,
-        Service.user_id == current_user.id
-    ).first()
+    service = (db.query(Service).
+               filter(Service.id == service_id,Service.user_id == current_user.id).
+               first())
 
     if not service:
         raise HTTPException(status_code=404, detail="Serwis nie został znaleziony.")
+
+    scheduler.add_job(
+        push_to_queue,
+        trigger="interval",
+        seconds=service.interval,
+        id=f"service_{service.id}",
+        args=[service.id]
+    )
+
     return service
 
 
@@ -72,6 +83,12 @@ def delete_service(service_id: int, db: Session = Depends(get_db), current_user:
 
     db.delete(service)
     db.commit()
+
+    try:
+        scheduler.remove_job(f"service_{service_id}")
+    except Exception:
+        pass
+
     return None
 
 # ===== CHECKS ENDPOINTS =====

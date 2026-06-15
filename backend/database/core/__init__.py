@@ -1,1 +1,1 @@
-from .int_db import get_db, Base, sessionmaker, engine
+from .int_db import get_db, Base, sessionmaker, engine, SessionLocal

@@ -1,12 +1,50 @@
 import uvicorn
-from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes import auth_router, service_router
 
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+from database.core import SessionLocal
+from database import Service
+from tasks import ping_service_task
+
+scheduler = AsyncIOScheduler()
+
+def push_to_queue(service_id: int):
+    ping_service_task.send(service_id)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    scheduler.start()
+
+    db = SessionLocal()
+    try:
+        services = db.query(Service).all()
+        for service in services:
+            scheduler.add_job(
+                push_to_queue,
+                trigger="interval",
+                seconds=service.interval,
+                id=f"service_{service.id}",
+                args=[service.id],
+                replace_existing=True
+            )
+        print(f"[INFO] Scheduler uruchomiony. Załadowano {len(services)} serwisów.")
+    finally:
+        db.close()
+
+    yield
+    # ==== ZAMKNIĘCIE APLIKACJI ====
+    scheduler.shutdown()
+    print("[INFO] Scheduler wyłączony.")
 app = FastAPI(
     title="ServicePulse API",
     description="Backend to monitor defined services",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
 # =-=-=-=-=-= CORS =-=-=-=-=-=
