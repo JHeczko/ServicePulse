@@ -3,46 +3,29 @@ services:
   # ========= POSTGRES DB =========
   postgres-db:
     image: postgres:17-alpine3.22
-
     container_name: sp-postgres-container
-
     env_file:
       - "./.env"
-
-    environment:
-      # in .env file in root catalog
-      # "POSTGRES_PASSWORD"
-      # "POSTGRES_USER"
-      "DB_HOST": "postgres-db"
-      "DB_PORT": "5432"
-      "POSTGRES_DB": "servicepulse"
-
     ports:
       - "5432:5432"
-
     networks:
       - backend-network
-
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
     restart: always
 
   # ========= REDIS WORKER =========
   redis-worker:
     image: redis:8.8-alpine
-
     container_name: sp-redis-container
-
     networks:
       - backend-network
-
     ports:
       - "6379:6379"
-
     volumes:
       - redis_data:/data
-
+    env_file:
+      - "./.env"
     restart: always
 
   # ========= DRAMATIQ WORKER =========
@@ -50,14 +33,14 @@ services:
     build:
       dockerfile: Dockerfile
       context: ./backend
-
     container_name: sp-worker-container
-
     command: dramatiq tasks.monitor_tasks
-
+    env_file:
+      - "./.env"
+    networks:
+      - backend-network
     volumes:
       - ./backend:/app
-
     depends_on:
       - redis-worker
       - postgres-db
@@ -66,39 +49,23 @@ services:
   service-backend:
     image: sp-backend
     container_name: sp-backend-container
-
     build:
       context: ./backend
       dockerfile: Dockerfile
-
     networks:
       - backend-network
       - frontend-network
-
     environment:
-      # in .env file in root catalog
-      # "POSTGRES_PASSWORD"
-      # "POSTGRES_USER"
-      "DB_HOST": "postgres-db"
-      "DB_PORT": "5432"
-      "POSTGRES_DB": "servicepulse"
       "PYTHONPATH": "/backend"
-
-
     volumes:
       - ./backend:/backend
-
     env_file:
       - "./.env"
-
     ports:
       - "13000:13000"
-
     depends_on:
       - postgres-db
-
     restart: always
-
     deploy:
       resources:
         limits:
@@ -109,27 +76,25 @@ services:
   frontend-service:
     image: sp-frontend
     container_name: sp-frontend-container
-
     build:
       context: ./frontend
       dockerfile: Dockerfile
-
     ports:
       - "5173:8080"
-
     networks:
       - frontend-network
-
+      - backend-network
     depends_on:
       - service-backend
-
+    env_file:
+      - "./.env"
     deploy:
       resources:
         limits:
           cpus: "0.25"
           memory: "256M"
-
     restart: always
+
 
 
 

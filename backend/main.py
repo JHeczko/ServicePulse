@@ -6,8 +6,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from database.core import SessionLocal
-from database import Service
+from database.core.int_db import SessionLocal
+from database.Service import Service
 from tasks import ping_service_task
 
 scheduler = AsyncIOScheduler()
