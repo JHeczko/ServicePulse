@@ -9,7 +9,7 @@ from database.User import User
 from utils.schemas import ServiceCreate, ServiceResponse, ServiceUpdate, CheckResponse, IncidentResponse
 from utils.security import get_current_user
 from utils.logger import logger
-
+from tasks import scheduler, push_to_queue
 router = APIRouter(prefix="/services", tags=["Services"])
 
 
@@ -27,7 +27,6 @@ def create_service(service_data: ServiceCreate, db: Session = Depends(get_db),
     db.commit()
     db.refresh(new_service)
 
-    from main import scheduler, push_to_queue
     try:
         scheduler.add_job(
             push_to_queue,
@@ -107,7 +106,6 @@ def update_service(service_id: int, service_data: ServiceUpdate, db: Session = D
     db.commit()
     db.refresh(service)
 
-    from main import scheduler, push_to_queue
     try:
         scheduler.add_job(
             push_to_queue,
@@ -135,7 +133,6 @@ def update_service(service_id: int, service_data: ServiceUpdate, db: Session = D
 
 @router.delete("/{service_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_service(service_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    from main import scheduler
 
     service = db.query(Service).filter(
         Service.id == service_id,
