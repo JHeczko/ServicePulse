@@ -80,7 +80,7 @@ class ServiceResponse(ServiceBase):
 # ===== CHECKS SCHEMAS =====
 class CheckResponse(BaseModel):
     id: int
-    status_code: int = Field(..., ge=100, le=599)
+    status_code: int = Field(..., ge=0, le=599)
     response_time_ms: int = Field(..., ge=0)
     created_at: datetime
     user_id: int
