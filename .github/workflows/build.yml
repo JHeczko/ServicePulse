@@ -1,0 +1,75 @@
+name: Full App CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-push:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+
+    strategy:
+      matrix:
+        component: [backend, frontend]
+
+    steps:
+      - name: Get repo code
+        uses: actions/checkout@v4
+
+      - name: Log to Azure ACR
+        uses: azure/docker-login@v1
+        with:
+          login-server: nexoregistryheczko.azurecr.io
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      # --- BUILD BACKEND ---
+      - name: Build and push Backend Image
+        if: matrix.component == 'backend'
+        run: |
+          cd backend
+
+          docker build -t nexoregistryheczko.azurecr.io/sp-backend-prod:latest .
+
+          docker push nexoregistryheczko.azurecr.io/sp-backend-prod:latest
+
+      # --- BUILD FRONTEND ---
+      - name: Build and push Frontend Image
+        if: matrix.component == 'frontend'
+        run: |
+          cd frontend
+
+          docker build \
+            --build-arg VITE_API_URL="${{ secrets.VITE_API_URL }}" \
+            -t nexoregistryheczko.azurecr.io/sp-frontend-prod:latest .
+
+          docker push nexoregistryheczko.azurecr.io/sp-frontend-prod:latest
+#  deploy-on-vm:
+#    needs:
+#      - test
+#      - build-and-push
+#    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+#    runs-on: ubuntu-22.04
+#    steps:
+#      - name: Connect to VM via SSH
+#        uses: appleboy/ssh-action@v1
+#        with:
+#          host: ${{ secrets.VM_HOST }}
+#          username: ${{ secrets.VM_USERNAME }}
+#          key: ${{ secrets.VM_SSH_KEY }}
+#          script: |
+#            cd ~/nexo-deployment
+#
+#            # Log in to ACR
+#            echo "${{ secrets.ACR_PASSWORD  }}" | docker login nexoregistryheczko.azurecr.io -u ${{ secrets.ACR_USERNAME }} --password-stdin
+#
+#            # Pull and deploy new changes
+#            docker pull nexoregistryheczko.azurecr.io/backend-nexo:latest
+#            docker compose up -d --no-deps backend
+#
+#            # clear everything
+#            docker image prune -f
+#            docker logout nexoregistryheczko.azurecr.io
